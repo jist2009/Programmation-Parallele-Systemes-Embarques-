@@ -5,8 +5,6 @@
 #include "project.h"
 
 // demodulator, just copies Y_N in L_N for now
-
-/*
 void modem_BPSK_demodulate(const float *Y_N, float *L_N, size_t N, float sigma){
     // calculer la constante une seule fois hors de la boucle
     float scale = 2.0f / (sigma * sigma);
@@ -21,38 +19,6 @@ void modem_BPSK_demodulate(const float *Y_N, float *L_N, size_t N, float sigma){
         float32x4_t l = vmulq_f32(y, v_scale);
         // Stocker 4 floats dans L_N 
         vst1q_f32(L_N + i, l);
-    }
-}
-
-*/
-
-#include <arm_neon.h>
-#include <stddef.h>
-
-void modem_BPSK_demodulate(const float *Y_N, float *L_N, size_t N, float sigma) {
-    float scale = 2.0f / (sigma * sigma);
-    float32x4_t v_scale = vdupq_n_f32(scale);
-    
-    size_t i = 0;
-
-    // Traitement par blocs de 8 pour maximiser le pipeline
-    for (; i + 7 < N; i += 8) {
-        // Charger 8 floats
-        float32x4_t y0 = vld1q_f32(Y_N + i);
-        float32x4_t y1 = vld1q_f32(Y_N + i + 4);
-
-        // Multiplier par la constante
-        float32x4_t l0 = vmulq_f32(y0, v_scale);
-        float32x4_t l1 = vmulq_f32(y1, v_scale);
-
-        // Stocker 8 floats
-        vst1q_f32(L_N + i, l0);
-        vst1q_f32(L_N + i + 4, l1);
-    }
-
-    // Gérer les éléments restants proprement (scalaire)
-    for (; i < N; i++) {
-        L_N[i] = Y_N[i] * scale;
     }
 }
 
@@ -132,8 +98,6 @@ void codec_repetition_soft_decode8_neon(const int8_t *L8_N, uint8_t *V_K, size_t
     }
 }
 
-
-/*
 // update `n_bit_errors` and `n_frame_errors` variables depending on `U_K` and `V_K`
 void monitor_check_errors(const uint8_t *U_K, const uint8_t *V_K, size_t K, uint64_t *n_bit_errors, uint64_t *n_frame_errors){
 
@@ -173,45 +137,4 @@ void monitor_check_errors(const uint8_t *U_K, const uint8_t *V_K, size_t K, uint
    }
     *n_bit_errors   += bit_errors;
     *n_frame_errors += frame_error;
-}
-
-*/
-#include <arm_neon.h>
-#include <stdint.h>
-#include <stddef.h>
-
-void monitor_check_errors(const uint8_t *U_K, const uint8_t *V_K, size_t K, uint64_t *n_bit_errors, uint64_t *n_frame_errors) {
-    uint64_t bit_errors = 0;
-    size_t i = 0;
-
-    // Accumulateur 16 bits (empêche l'overflow pour K < 524288)
-    uint16x8_t vacc = vdupq_n_u16(0);
-
-    // Boucle principale vectorisée
-    for (; i + 15 < K; i += 16) {
-        uint8x16_t u = vld1q_u8(U_K + i);
-        uint8x16_t v = vld1q_u8(V_K + i);
-        
-        // XOR : 1 si différent, 0 si identique
-        uint8x16_t diff = veorq_u8(u, v);
-
-        // Additionne les paires d'octets adjacents et accumule dans vacc (16 bits)
-        vacc = vpadalq_u8(vacc, diff);
-    }
-
-    // Réduction horizontale : sommer les 8 valeurs de 16 bits en un scalaire
-    uint32x4_t sum32 = vpaddlq_u16(vacc);
-    uint64x2_t sum64 = vpaddlq_u32(sum32);
-    bit_errors += vgetq_lane_u64(sum64, 0) + vgetq_lane_u64(sum64, 1);
-
-    // Boucle scalaire pour les éléments restants (si K n'est pas multiple de 16)
-    for (; i < K; i++) {
-        bit_errors += (U_K[i] ^ V_K[i]);
-    }
-
-    // Mise à jour des pointeurs
-    *n_bit_errors += bit_errors;
-    if (bit_errors > 0) {
-        *n_frame_errors += 1;
-    }
 }

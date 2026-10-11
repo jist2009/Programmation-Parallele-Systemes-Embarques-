@@ -1,8 +1,7 @@
-#include <arm_neon.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stddef.h>
+#include <arm_neon.h>
 #include "project.h"
 
 // write into the buffer U_K
@@ -36,10 +35,8 @@ void codec_repetition_encode(const uint8_t *U_K, uint8_t *C_N, size_t K, size_t 
     }
 }
 
-// *4
+
 // read from C_N, write into X_N
-/*
-ancien
 void modem_BPSK_modulate(const uint8_t *C_N, int32_t *X_N, size_t N) {
     
     int32x4_t v_one = vdupq_n_s32(1);  
@@ -53,37 +50,9 @@ void modem_BPSK_modulate(const uint8_t *C_N, int32_t *X_N, size_t N) {
         // Stocker dans X_N
         vst1q_s32(X_N + i, x);
     }
-}*/
-
-
-void modem_BPSK_modulate(const uint8_t *C_N, int32_t *X_N, size_t N) {
-    int32x4_t v_one = vdupq_n_s32(1);
-    size_t i = 0;
-
-    // Traitement par blocs de 8 pour maximiser l'usage des registres 128 bits
-    for (; i + 7 < N; i += 8) {
-        // 1. Charger 8 valeurs (8 bits) d'un coup
-        uint8x8_t c8 = vld1_u8(C_N + i);
-
-        // 2. Étendre à 16 bits puis à 32 bits
-        uint16x8_t c16 = vmovl_u8(c8);
-        int32x4_t c32_low  = vreinterpretq_s32_u32(vmovl_u16(vget_low_u16(c16)));
-        int32x4_t c32_high = vreinterpretq_s32_u32(vmovl_u16(vget_high_u16(c16)));
-
-        // 3. Calculer 1 - (c << 1) (équivaut à 1 - 2c)
-        int32x4_t x_low  = vsubq_s32(v_one, vshlq_n_s32(c32_low, 1));
-        int32x4_t x_high = vsubq_s32(v_one, vshlq_n_s32(c32_high, 1));
-
-        // 4. Stocker les résultats
-        vst1q_s32(X_N + i, x_low);
-        vst1q_s32(X_N + i + 4, x_high);
-    }
-
-    // 5. Gérer les éléments restants proprement (scalaire)
-    for (; i < N; i++) {
-        X_N[i] = 1 - (C_N[i] << 1);
-    }
 }
+
+
 // void modem_BPSK_modulate(const uint8_t *C_N, int32_t *X_N, size_t N) {
 //     int32x4_t v_one = vdupq_n_s32(1);  
 //     int32x4_t v_two = vdupq_n_s32(2);
